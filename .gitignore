@@ -1,7 +1,7 @@
 # ignore all logs
 *.swp
 .idea/*.*
-.DS_Store
+.DS_Store/
 *.swo
 *.swn
 configurations/__pycache__/*.*
