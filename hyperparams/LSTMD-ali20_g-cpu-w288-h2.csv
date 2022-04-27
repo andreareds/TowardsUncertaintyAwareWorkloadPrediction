@@ -1,0 +1,2 @@
+,batch_size,decay,dense_kernel_init,epochs,first_conv_activation,first_conv_dim,first_conv_kernel,first_dense_activation,first_dense_dim,lr,momentum,optimizer,patience,second_lstm_dim
+0,1024,0.0001,glorot_uniform,2000,relu,64,7,<function relu at 0x7fa301547050>,16,0.001,0.9,adam,50,64
