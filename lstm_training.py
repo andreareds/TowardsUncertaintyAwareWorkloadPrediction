@@ -8,10 +8,13 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from datetime import datetime
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-wins = [144]
+wins = [288]
 hs = [2]
 resources = ['cpu', 'mem']
-clusters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+clusters = ['gc19_a', 'gc19_b', 'gc19_c', 'gc19_d', 'gc19_e', 'gc19_f', 'gc19_g', 'gc19_h', 'gc11', 'ali18', 'ali20_c',
+            'ali20_g']
+bivariate = True
+model = 'LSTM'
 ITERATIONS = 10
 
 train_splits = [0.8] 
@@ -45,7 +48,7 @@ for tuning_rate in tuning_rates:
                         best_mse = 100000
 
                         # Read the best hyperparameters
-                        parameters = pd.read_csv("hyperparams/p_lstm-" + c + ".csv").iloc[0]
+                        parameters = pd.read_csv("hyperparams/" + model + "-" + c + "-" + res + "-w288-h2.csv").iloc[0]
 
                         dense_act = 'relu'
                         if 'relu' in parameters['first_dense_activation']:

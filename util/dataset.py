@@ -12,7 +12,7 @@ import math
 
 class Dataset:
     def __init__(self, meta=None, filename="res_task_a.csv", winSize=144, horizon=0, resource='cpu',
-                 train_split=0.8):
+                 train_split=0.8, bivariate=False):
         # Definition of all the instance attributes
         # Name of the experiment
         self.name = filename
@@ -33,9 +33,13 @@ class Dataset:
         self.train_features = []
         self.test_features = []
 
-        # Column to predict
-        self.attribute = "avg" + resource
-        self.channels = 1
+        if bivariate:
+            self.attribute = ['avgcpu', 'avgmem']
+            self.channels = 2
+        else:
+            # Column to predict
+            self.attribute = "avg" + resource
+            self.channels = 1
 
         # Input files
         self.data_file = self.name  # "res_task_e.csv"  # "req_win_a.csv"  # "winDataset.csv"  # None

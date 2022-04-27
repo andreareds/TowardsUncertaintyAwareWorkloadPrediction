@@ -11,10 +11,14 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from datetime import datetime
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-wins = [144]
+wins = [288]
 hs = [2]
 resources = ['cpu', 'mem']
-clusters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+clusters = ['gc19_a', 'gc19_b', 'gc19_c', 'gc19_d', 'gc19_e', 'gc19_f', 'gc19_g', 'gc19_h', 'gc11', 'ali18', 'ali20_c',
+            'ali20_g']
+bivariate = True
+model = 'LSTMD'
+
 ITERATIONS = 10
 train_splits = [0.8]
 tuning_rates = [6]
@@ -29,15 +33,15 @@ for tuning_rate in tuning_rates:
                         mses, maes = [], []
 
                         if tuning:
-                            experiment_name = 'tuned-LSTMD-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
+                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
                                               '-tuning' + str(int(tuning_rate))
 
                         else:
-                            experiment_name = 'tuned-LSTMD-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
+                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
 
                         # Data creation and load
-                        ds = dataset.Dataset(meta=False, filename='res_task_' + c + '.csv', winSize=win, horizon=h,
-                                             resource=res, train_split=ts)
+                        ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
+                                             resource=res, train_split=ts, bivariate=bivariate)
                         ds.dataset_creation()
 
                         ds.data_summary()
@@ -45,7 +49,7 @@ for tuning_rate in tuning_rates:
                         best_model, best_history, best_prediction_mean, best_prediction_std = None, None, None, None
                         best_mse = 100000
 
-                        parameters = pd.read_csv("hyperparams/p_lstmd-" + c + ".csv").iloc[0]
+                        parameters = pd.read_csv("hyperparams/" + model + "-" + c + "-" + res + "-w288-h2.csv").iloc[0]
 
                         dense_act = 'relu'
                         if 'relu' in parameters['first_dense_activation']:

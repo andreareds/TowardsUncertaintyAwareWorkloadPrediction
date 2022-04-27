@@ -198,6 +198,7 @@ class HBNNPredictor(ModelInterface):
     def talos_model(self, X_train, y_train, x_val, y_val, p):
         tf.keras.backend.clear_session()
         input_shape = X_train.shape[1:]
+        output_shape = y_train.shape[1]
 
         input_tensor = Input(shape=input_shape)
 
@@ -214,8 +215,8 @@ class HBNNPredictor(ModelInterface):
                      1 / X_train.shape[0],
                      p['first_dense_activation'])(x)
 
-        distribution_params = layers.Dense(units=2)(x)
-        outputs = tfp.layers.IndependentNormal(1)(distribution_params)
+        distribution_params = layers.Dense(units=2*output_shape)(x)
+        outputs = tfp.layers.IndependentNormal(output_shape)(distribution_params)
 
         self.train_model = Model(inputs=input_tensor, outputs=outputs)
 

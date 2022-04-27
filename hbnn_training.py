@@ -12,27 +12,31 @@ from tensorflow import keras
 from util import dataset, plot_training, save_results
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-wins = [144]
+wins = [288]
 hs = [2]
 resources = ['cpu', 'mem']
-clusters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+clusters = ['gc19_a', 'gc19_b', 'gc19_c', 'gc19_d', 'gc19_e', 'gc19_f', 'gc19_g', 'gc19_h', 'gc11', 'ali18', 'ali20_c',
+            'ali20_g']
+bivariate = True
+model = 'HBNN'
 
 for win in wins:
     for res in resources:
         for h in hs:
             for c in clusters:
                 mses, maes = [], []
-                experiment_name = 'HBNN-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
+                experiment_name = model + '-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
 
                 # Data creation and load
-                ds = dataset.Dataset(meta=False, filename='res_task_' + c + '.csv', winSize=win, horizon=h,
-                                     resource=res)
+                ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
+                                     resource=res, bivariate=bivariate)
                 ds.dataset_creation()
                 ds.data_summary()
-                parameters = pd.read_csv("hyperparams/p_hbnn-" + c + ".csv").iloc[0]
+                parameters = pd.read_csv("hyperparams/" + model + "-" + c + "-" + res + "-w288-h2.csv").iloc[0]
 
                 files = sorted(
-                    glob.glob("saved_models/talos-HBNN-" + c + "-cpu-w" + str(win) + "-h" + str(h) + "*_weights.tf.i*"))
+                    glob.glob("saved_models/talos-" + model + "-" + c + "-" + res + "-w" + str(win) + "-h" + str(h) +
+                              "*_weights.tf.i*"))
 
                 dense_act = 'relu'
                 if 'relu' in parameters['first_dense_activation']:
@@ -53,8 +57,7 @@ for win in wins:
                      'batch_normalization': True,
                      'lr': parameters['lr'],
                      'momentum': parameters['momentum'],
-                     'decay': parameters['decay'],
-                     'pred_steps': 0,
+                     'decay': parameters['decay']
                      }
 
                 print("RESOURCE:", res, "CLUSTER:", c, "HORIZON:", h, "WIN:", win)
