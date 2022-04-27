@@ -4,6 +4,6 @@ The prediction of future demand in Cloud Computing is essential for the manageme
 
 In this paper, we propose Bayesian deep learning models that are trained with multiple datasets in order to predict the distribution of the future demand and model the uncertainty in the context of cloud workload prediction. We compare them to the same models trained with one single dataset, showing that more data help the model to generalize and make it more accurate. Moreover, we provide an ablation study of a bivariate model trained with multiple datasets and compare the results to the univariate counterpart to investigate which components are more affecting the accuracy of the prediction and its impact on the QoS.
 
-Results show that... \\
+Results show that... 
 
 Contextually, we make available the 12 datasets from the Google Cloud and Alibaba Cloud Computing systems' traces that we pre-processed and used for the experiments to facilitate the research on this field. 
