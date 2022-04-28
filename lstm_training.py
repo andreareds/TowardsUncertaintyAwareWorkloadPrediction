@@ -30,14 +30,14 @@ for tuning_rate in tuning_rates:
                         mses, maes = [], []
 
                         if tuning:
-                            experiment_name = 'tuned-LSTM-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
+                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
                                               '-tuning' + str(int(tuning_rate))
                         else:
-                            experiment_name = 'tuned-LSTM-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
+                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
                                               '-ts' + str(int(ts * 100)) 
 
                         # Data creation and load
-                        ds = dataset.Dataset(meta=False, filename='res_task_' + c + '.csv', winSize=win, horizon=h,
+                        ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
                                              resource=res, train_split=ts)
                         print(ds.name)
                         ds.dataset_creation()
