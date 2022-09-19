@@ -47,3 +47,11 @@ python hbnn_training.py
 ```bash
 python lstmd_training.py
 ```
+
+##### Model types:
+* univariate
+* bivariate
+* multiunivariate
+* multibivariate
+
+
