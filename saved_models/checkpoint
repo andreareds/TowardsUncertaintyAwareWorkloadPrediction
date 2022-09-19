@@ -1,2 +1,0 @@
-model_checkpoint_path: "HBNN-cpu-gc19_a-w288-h20000_weights.tf"
-all_model_checkpoint_paths: "HBNN-cpu-gc19_a-w288-h20000_weights.tf"

@@ -1,0 +1,2 @@
+,round_epochs,loss,mse,mae,val_loss,val_mse,val_mae,batch_size,decay,dense_kernel_init,epochs,first_conv_activation,first_conv_dim,first_conv_kernel,first_dense_activation,first_dense_dim,lr,momentum,optimizer,patience,second_lstm_dim
+180,1081,0.0008835914195515,0.0008835914195515,0.0217563677579164,0.0022399213630706,0.0022399213630706,0.035767313092947,256,0.0001,glorot_uniform,2000,relu,32,11,relu,64,0.001,0.9,adam,50,64

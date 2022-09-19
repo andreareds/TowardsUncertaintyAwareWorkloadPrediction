@@ -5,11 +5,11 @@ import os
 import pandas as pd
 import pickle
 import tensorflow as tf
-from keras.utils.vis_utils import plot_model
 from models import HBNN
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow import keras
-from util import dataset, plot_training, save_results
+from util import dataset, plot_training, save_results, multipleDataset
+from datetime import datetime
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 wins = [288]
@@ -17,94 +17,131 @@ hs = [2]
 resources = ['cpu', 'mem']
 clusters = ['gc19_a', 'gc19_b', 'gc19_c', 'gc19_d', 'gc19_e', 'gc19_f', 'gc19_g', 'gc19_h', 'gc11', 'ali18', 'ali20_c',
             'ali20_g']
+
+files = []
+[files.append('preprocessed/' + c + '.csv') for c in clusters]
+
 bivariate = True
 model = 'HBNN'
+type = 'multibivariate' #bivariate #multiunivariate #univariate
 ITERATIONS = 10
 
-for run in range(ITERATIONS):
-    for win in wins:
-        for res in resources:
-            for h in hs:
+suffix = "MULTIBI" # "BI", "MULTI", ""
+
+train_splits = [0.8, 0.6, 0.4, 0.2]
+tuning_rates = [6] #, 12, 18, 24]
+tuning = False
+
+for tuning_rate in tuning_rates:
+    for ts in train_splits:
+        for win in wins:
+            for res in resources:
                 for c in clusters:
-                    mses, maes = [], []
-                    experiment_name = model + '-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
+                    for h in hs:
+                        mses, maes = [], []
+                        experiment_name = suffix + model + '-' + res + '-' + c + '-w' + str(win) + '-h' + str(h)
 
-                    # Data creation and load
-                    ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
-                                         resource=res, bivariate=bivariate)
-                    ds.dataset_creation()
-                    ds.data_summary()
-                    parameters = pd.read_csv("hyperparams/" + model + "-" + c + "-" + res + "-w288-h2.csv").iloc[0]
+                        # Data creation and load
+                        if type == 'univariate' or type == 'bivariate':
+                            ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
+                                                resource=res, bivariate=bivariate)
+                        else:
+                            ds = multipleDataset.Dataset(meta=None, filenames=files, winSize=288, horizon=2,
+                                                     resource=res, bivariate=bivariate, shuffle=True)
+                        ds.dataset_creation()
+                        ds.data_summary()
+                        parameters = pd.read_csv("hyperparams/"+ type + "/" + model + "-w288-h2.csv").iloc[0]
 
-                    files = sorted(
-                        glob.glob("saved_models/talos-" + model + "-" + c + "-" + res + "-w" + str(win) + "-h" + str(h) +
-                                  "*_weights.tf.i*"))
 
-                    dense_act = 'relu'
-                    if 'relu' in parameters['first_dense_activation']:
+                        best_model, best_history, best_prediction_mean, best_prediction_std = None, None, None, None
+                        best_mse = 100000
+
                         dense_act = 'relu'
-                    elif 'tanh' in parameters['first_dense_activation']:
-                        dense_act = 'tanh'
+                        if 'relu' in parameters['first_dense_activation']:
+                            dense_act = 'relu'
+                        elif 'tanh' in parameters['first_dense_activation']:
+                            dense_act = 'tanh'
 
-                    p = {'first_conv_dim': parameters['first_conv_dim'],
-                         'first_conv_activation': parameters['first_conv_activation'],
-                         'first_conv_kernel': (parameters['first_conv_kernel'],),
-                         'second_lstm_dim': parameters['second_lstm_dim'],
-                         'first_dense_dim': parameters['first_dense_dim'],
-                         'first_dense_activation': dense_act,
-                         'batch_size': parameters['batch_size'],
-                         'epochs': parameters['epochs'],
-                         'patience': parameters['patience'],
-                         'optimizer': parameters['optimizer'],
-                         'batch_normalization': True,
-                         'lr': parameters['lr'],
-                         'momentum': parameters['momentum'],
-                         'decay': parameters['decay']
-                         }
+                        p = {
+                            'first_conv_dim': int(parameters['first_conv_dim']),
+                            'first_conv_kernel': int(parameters['first_conv_kernel']),
+                            'first_conv_activation': parameters['first_conv_activation'],
+                            'cnn_layers': int(parameters['cnn_layers']),
+                            'second_lstm_dim': int(parameters['second_lstm_dim']),
+                            'first_dense_dim': int(parameters['first_dense_dim']),
+                            'first_dense_activation': dense_act,
+                            'mlp_units': np.array(parameters['mlp_units'][1:-1].split(','), dtype=np.int),
+                            'dense_kernel_init': parameters['dense_kernel_init'],
+                            'batch_size': int(parameters['batch_size']),
+                            'epochs': int(parameters['epochs']),
+                            'patience': int(parameters['patience']),
+                            'optimizer':  parameters['optimizer'],
+                            'lr': float(parameters['lr']),
+                            'momentum': float(parameters['momentum']),
+                            'decay': float(parameters['decay'])
+                        }
 
-                    print("RESOURCE:", res, "CLUSTER:", c, "HORIZON:", h, "WIN:", win)
-                    model = HBNN.HBNNPredictor()
-                    model.name = experiment_name
+                        training_times, inference_times, tuning_times = [], [], []
 
-                    if len(files):
-                        for i in range(len(files)):
-                            path_weight = files[-(i + 1)][:-6]
-                            p['weight_file'] = path_weight
-                            try:
-                                train_model, prediction_mean, prediction_std = model.load_and_predict(ds.X_train,
-                                                                                                      ds.y_train,
-                                                                                                      ds.X_test,
-                                                                                                      ds.y_test, p)
-                            except:
-                                train_model, prediction_mean, prediction_std = model.training(ds.X_train, ds.y_train,
-                                                                                              ds.X_test,
-                                                                                              ds.y_test, p)
-                    else:
-                        train_model, prediction_mean, prediction_std = model.training(ds.X_train, ds.y_train,
-                                                                                      ds.X_test,
-                                                                                      ds.y_test, p)
+                        for it in range(ITERATIONS):
+                            print("ITERATION:", it, "HORIZON:", h, "WIN:", win)
+                            model = HBNN.HBNNPredictor()
+                            model.name = experiment_name
 
-                    train_distribution = train_model(ds.X_train)
-                    train_mean = np.concatenate(train_distribution.mean().numpy(), axis=0)
-                    train_std = np.concatenate(train_distribution.stddev().numpy(), axis=0)
+                            start = datetime.now()
 
-                    save_results.save_uncertainty_csv(train_mean, train_std,
-                                                      np.concatenate(ds.y_train, axis=0),
-                                                      'avg' + res,
-                                                      'train-' + model.name)
+                            train_model, history, prediction_mean, prediction_std, training_time, inference_time = \
+                                model.training(ds.X_train, ds.y_train,
+                                               ds.X_test,
+                                               ds.y_test, p)
+                            training_times.append(training_time)
+                            inference_times.append(inference_time)
 
-                    mse = mean_squared_error(ds.y_test, prediction_mean)
-                    mae = mean_absolute_error(ds.y_test, prediction_mean)
+                            if tuning:
+                                for i in range(int(ds.X_test.shape[0] / tuning_rate) - 1):
+                                    train_model, history, tuning_time = model.tuning(
+                                        ds.X_test[i * tuning_rate:(i + 1) * tuning_rate],
+                                        ds.y_test[i * tuning_rate:(i + 1) * tuning_rate], p)
+                                    tuning_times.append(tuning_time)
 
-                    save_results.save_uncertainty_csv(prediction_mean, prediction_std,
-                                                      np.concatenate(ds.y_test[:len(prediction_mean)], axis=0),
-                                                      'avg' + res,
-                                                      model.name)
+                            train_distribution = train_model(ds.X_train)
+                            train_mean = train_distribution.mean().numpy()
+                            train_std = train_distribution.stddev().numpy()
 
-                    plot_training.plot_series_interval(np.arange(0, len(ds.y_test) - 1), ds.y_test, prediction_mean,
-                                                       prediction_std,
-                                                       label1="ground truth",
-                                                       label2="prediction", title=model.name)
+                            save_results.save_uncertainty_csv(train_mean, train_std,
+                                                              ds.y_train,
+                                                              'avg' + res,
+                                                              'train-' + model.name + "-run-" + str(it), bivariate=bivariate)
+                            mse = mean_squared_error(ds.y_test, prediction_mean)
+                            mae = mean_absolute_error(ds.y_test, prediction_mean)
+                            mses.append(mse)
+                            maes.append(mae)
 
-                    plot_model(train_model, to_file='img/models/model_plot_' + model.name + '.png', show_shapes=True,
-                               show_layer_names=True)
+                            save_results.save_uncertainty_csv(prediction_mean, prediction_std,
+                                                              ds.y_test[:len(prediction_mean)], 'avg' + res,
+                                                              model.name + "-run-" + str(it),
+                                                              bivariate=bivariate)
+
+                            if mse < best_mse:
+                                best_mse = mse
+                                best_prediction_mean = prediction_mean
+                                best_prediction_std = prediction_std
+                                best_model = train_model
+                                best_history = history
+
+                            if tuning:
+                                df_tuning_times = pd.DataFrame({'time': tuning_times})
+                                df_tuning_times.to_csv("time/" + experiment_name + 'tuning_time.csv')
+                            else:
+                                df_training_time = pd.DataFrame({'time': training_times})
+                                df_training_time.to_csv("time/" + experiment_name + 'training_time.csv')
+
+                                df_inference_time = pd.DataFrame({'time': inference_times})
+                                df_inference_time.to_csv("time/" + experiment_name + 'inference_time.csv')
+
+                            prediction_mean = best_prediction_mean
+                            prediction_std = best_prediction_std
+                            history = best_history
+                            train_model = best_model
+
+                            save_results.save_errors(mses, maes, model.name)

@@ -1,4 +1,4 @@
-from util import dataset, plot_training, save_results
+from util import dataset, plot_training, save_results, multipleDataset
 import numpy as np
 from models import LSTM
 from keras.utils.vis_utils import plot_model
@@ -13,12 +13,19 @@ hs = [2]
 resources = ['cpu', 'mem']
 clusters = ['gc19_a', 'gc19_b', 'gc19_c', 'gc19_d', 'gc19_e', 'gc19_f', 'gc19_g', 'gc19_h', 'gc11', 'ali18', 'ali20_c',
             'ali20_g']
+
+files = []
+[files.append('preprocessed/' + c + '.csv') for c in clusters]
+
 bivariate = True
 model = 'LSTM'
+type = 'multibivariate' #bivariate #multiunivariate #univariate
 ITERATIONS = 10
 
-train_splits = [0.8] 
-tuning_rates = [6]
+suffix = "MULTIBI" # "BI", "MULTI", ""
+
+train_splits = [0.8, 0.6, 0.4, 0.2]
+tuning_rates = [6] #, 12, 18, 24]
 tuning = False
 
 for tuning_rate in tuning_rates:
@@ -26,122 +33,113 @@ for tuning_rate in tuning_rates:
         for win in wins:
             for res in resources:
                 for h in hs:
-                    for c in clusters:
-                        mses, maes = [], []
+                    mses, maes = [], []
 
-                        if tuning:
-                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
-                                              '-tuning' + str(int(tuning_rate))
-                        else:
-                            experiment_name = 'tuned-'+model+'-' + res + '-' + c + '-w' + str(win) + '-h' + str(h) + \
-                                              '-ts' + str(int(ts * 100)) 
+                    if tuning:
+                        experiment_name = '-' + res + '-' + '-w' + str(win) + '-h' + str(h) + \
+                                          '-tuning' + str(int(tuning_rate))
+                    else:
+                        experiment_name = suffix + model + res + '-w' + str(win) + '-h' + str(h) + \
+                                          '-ts' + str(int(ts * 100))
 
-                        # Data creation and load
+                    # Data creation and load
+                    if type == 'univariate' or type == 'bivariate':
                         ds = dataset.Dataset(meta=False, filename='preprocessed/' + c + '.csv', winSize=win, horizon=h,
-                                             resource=res, train_split=ts)
-                        print(ds.name)
-                        ds.dataset_creation()
+                                            resource=res, bivariate=bivariate)
+                    else:
+                        ds = multipleDataset.Dataset(meta=None, filenames=files, winSize=288, horizon=2,
+                                                 resource=res, bivariate=bivariate, shuffle=True)
 
-                        ds.data_summary()
+                    ds.dataset_creation()
 
-                        best_model, best_history, best_prediction_mean, best_prediction_std = None, None, None, None
-                        best_mse = 100000
+                    ds.data_summary()
 
-                        # Read the best hyperparameters
-                        parameters = pd.read_csv("hyperparams/" + model + "-" + c + "-" + res + "-w288-h2.csv").iloc[0]
+                    best_model, best_history, best_prediction_mean, best_prediction_std = None, None, None, None
+                    best_mse = 100000
 
+                    parameters = pd.read_csv("hyperparams/"+ type + "/" + model + "-w288-h2.csv").iloc[0]
+
+                    dense_act = 'relu'
+                    if 'relu' in parameters['first_dense_activation']:
                         dense_act = 'relu'
-                        if 'relu' in parameters['first_dense_activation']:
-                            dense_act = 'relu'
-                        elif 'tanh' in parameters['first_dense_activation']:
-                            dense_act = 'tanh'
-                            
-                        p = {'first_conv_dim': parameters['first_conv_dim'],
-                             'first_conv_activation': parameters['first_conv_activation'],
-                             'first_conv_kernel': (parameters['first_conv_kernel'],),
-                             'second_lstm_dim': parameters['second_lstm_dim'],
-                             'first_dense_dim': parameters['first_dense_dim'],
-                             'first_dense_activation': dense_act,
-                             'batch_size': parameters['batch_size'],
-                             'epochs': parameters['epochs'],
-                             'patience': parameters['patience'],
-                             'optimizer': parameters['optimizer'],
-                             'batch_normalization': True,
-                             'lr': parameters['lr'],
-                             'momentum': parameters['momentum'],
-                             'decay': parameters['decay'],
-                             }
+                    elif 'tanh' in parameters['first_dense_activation']:
+                        dense_act = 'tanh'
 
-                        print(p)
+                    p = {
+                        'first_conv_dim': int(parameters['first_conv_dim']),
+                        'first_conv_kernel': int(parameters['first_conv_kernel']),
+                        'first_conv_activation': parameters['first_conv_activation'],
+                        'cnn_layers': int(parameters['cnn_layers']),
+                        'second_lstm_dim': int(parameters['second_lstm_dim']),
+                        'first_dense_dim': int(parameters['first_dense_dim']),
+                        'first_dense_activation': dense_act,
+                        'mlp_units': np.array(parameters['mlp_units'][1:-1].split(','), dtype=np.int),
+                        'dense_kernel_init': parameters['dense_kernel_init'],
+                        'batch_size': int(parameters['batch_size']),
+                        'epochs': int(parameters['epochs']),
+                        'patience': int(parameters['patience']),
+                        'optimizer': parameters['optimizer'],
+                        'lr': float(parameters['lr']),
+                        'momentum': float(parameters['momentum']),
+                        'decay': float(parameters['decay'])
+                    }
 
-                        training_times, inference_times, tuning_times = [], [], []
+                    print(p)
 
-                        for it in range(ITERATIONS):
-                            print("RESOURCE:", res, "CLUSTER:", c, "ITERATION:", it, "HORIZON:", h, "WIN:", win)
-                            model = LSTM.LSTMPredictor()
-                            model.name = experiment_name
-                            start = datetime.now()
+                    training_times, inference_times, tuning_times = [], [], []
 
-                            train_model, history, forecast, training_time, inference_time = \
-                                model.training(ds.X_train, ds.y_train,
-                                               ds.X_test,
-                                               ds.y_test, p)
-                            training_times.append(training_time)
-                            inference_times.append(inference_time)
+                    for it in range(ITERATIONS):
+                        print("ITERATION:", it, "HORIZON:", h, "WIN:", win)
+                        model = LSTM.LSTMPredictor()
+                        model.name = experiment_name
 
-                            if tuning:
-                                for i in range(int(ds.X_test.shape[0] / tuning_rate) - 1):
-                                    train_model, history, tuning_time = model.tuning(
-                                        ds.X_test[i * tuning_rate:(i + 1) * tuning_rate],
-                                        ds.y_test[i * tuning_rate:(i + 1) * tuning_rate], p)
-                                    tuning_times.append(tuning_time)
+                        start = datetime.now()
 
-                            mse = mean_squared_error(ds.y_test, forecast)
-                            mae = mean_absolute_error(ds.y_test, forecast)
-                            mses.append(mse)
-                            maes.append(mae)
-
-                            save_results.save_output_csv(forecast, np.concatenate(ds.y_test[:len(forecast)], axis=0),
-                                                         'avg' + res,
-                                                         model.name + '-run-' + str(it))
-
-                            if mse < best_mse:
-                                best_mse = mse
-                                best_prediction_mean = forecast
-                                best_model = train_model
-                                best_history = history
+                        train_model, history, forecast, training_time, inference_time = \
+                            model.training(ds.X_train, ds.y_train,
+                                           ds.X_test,
+                                           ds.y_test, p)
+                        training_times.append(training_time)
+                        inference_times.append(inference_time)
 
                         if tuning:
-                            df_tuning_times = pd.DataFrame({'time': tuning_times})
-                            df_tuning_times.to_csv("time/" + experiment_name + 'tuning_time.csv')
-                        else:
-                            df_training_time = pd.DataFrame({'time': training_times})
-                            df_training_time.to_csv("time/" + experiment_name + 'training_time.csv')
-                            df_inference_time = pd.DataFrame({'time': inference_times})
-                            df_inference_time.to_csv("time/" + experiment_name + 'inference_time.csv')
+                            for i in range(int(ds.X_test.shape[0] / tuning_rate) - 1):
+                                train_model, history, tuning_time = model.tuning(
+                                    ds.X_test[i * tuning_rate:(i + 1) * tuning_rate],
+                                    ds.y_test[i * tuning_rate:(i + 1) * tuning_rate], p)
+                                tuning_times.append(tuning_time)
 
-                        forecast = best_prediction_mean
-                        history = best_history
-                        train_model = best_model
+                        evaluation = train_model(ds.X_train).numpy()
+                        save_results.save_output_csv(evaluation, ds.y_train, 'avg' + res,
+                                                     'train-' + model.name + '-run-' + str(it), bivariate=bivariate)
 
-                        plot_training.plot_series(np.arange(0, len(ds.y_test) - 1), ds.y_test, forecast,
-                                                  label1="ground truth",
-                                                  label2="prediction", title=model.name)
+                        mse = mean_squared_error(ds.y_test, forecast)
+                        mae = mean_absolute_error(ds.y_test, forecast)
+                        mses.append(mse)
+                        maes.append(mae)
 
-                        plot_training.plot_loss(history, model.name)
+                        save_results.save_output_csv(forecast, ds.y_test[:len(forecast)],
+                                                     'avg' + res,
+                                                     model.name + '-run-' + str(it), bivariate=bivariate)
 
-                        plot_model(train_model, to_file='img/models/model_plot_' + model.name + '.png',
-                                   show_shapes=True,
-                                   show_layer_names=True)
+                        if mse < best_mse:
+                            best_mse = mse
+                            best_prediction_mean = forecast
+                            best_model = train_model
+                            best_history = history
 
-                        plot_training.plot_series(np.arange(0, len(ds.y_test) - 1), ds.y_test, forecast,
-                                                  label1="ground truth",
-                                                  label2="prediction", title=model.name)
+                    if tuning:
+                        df_tuning_times = pd.DataFrame({'time': tuning_times})
+                        df_tuning_times.to_csv("time/" + experiment_name + 'tuning_time.csv')
+                    else:
+                        df_training_time = pd.DataFrame({'time': training_times})
+                        df_training_time.to_csv("time/" + experiment_name + 'training_time.csv')
 
-                        plot_training.plot_loss(history, model.name)
+                        df_inference_time = pd.DataFrame({'time': inference_times})
+                        df_inference_time.to_csv("time/" + experiment_name + 'inference_time.csv')
 
-                        plot_model(train_model, to_file='img/models/model_plot_' + model.name + '.png',
-                                   show_shapes=True,
-                                   show_layer_names=True)
+                    forecast = best_prediction_mean
+                    history = best_history
+                    train_model = best_model
 
-                        save_results.save_errors(mses, maes, model.name)
+                    save_results.save_errors(mses, maes, model.name)

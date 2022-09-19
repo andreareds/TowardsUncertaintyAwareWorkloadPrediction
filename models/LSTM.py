@@ -1,7 +1,10 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 import talos
-from tensorflow.keras.layers import Dense
+from tensorflow import keras
+from tensorflow.keras import layers, Model
+from tensorflow.keras.layers import Dense, LSTM, Lambda
 from tensorflow.keras.layers import Conv1D, Flatten, Activation, Dropout, BatchNormalization, Input
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import RMSprop, Adam, Nadam, SGD
@@ -9,30 +12,31 @@ from tensorflow.keras.callbacks import EarlyStopping
 from util import custom_keras
 from models.model_interface import ModelInterface
 from sklearn.metrics import mean_squared_error
+from util import plot_training
+from keras.utils.vis_utils import plot_model
+import tensorflow_probability as tfp
 from datetime import datetime
 import pickle
 
 
 class LSTMPredictor(ModelInterface):
     def __init__(self):
-        ModelInterface.__init__(self, "LSTMPredictor")
-        self.train_model = None
-        self.input_shape = None
-        self.model = None
-        self.parameter_list = {'first_conv_dim': [32, 64, 128],
-                               'first_conv_kernel': [3, 5, 7, 11],
+        ModelInterface.__init__(self, "TunedLSMTDPredictor")
+        self.parameter_list = {'first_conv_dim': [8, 16, 32],
                                'first_conv_activation': ['relu', 'tanh'],
-                               'second_lstm_dim': [16, 32, 64],
-                               'first_dense_dim': [16, 32, 64],
-                               'first_dense_activation': ['relu', 'elu', 'selu', 'tanh'],
+                               'second_lstm_dim': [8, 16, 32],
+                               'first_dense_dim': [8, 16, 32],
+                               'dense_dim': [32, 64, 128, 256],
+                               'first_dense_activation': [keras.activations.relu, keras.activations.tanh],
                                'dense_kernel_init': ['he_normal', 'glorot_uniform'],
-                               'batch_size': [256, 512, 1024],
-                               'epochs': [2000],
-                               'patience': [50],
-                               'optimizer': ['adam', 'nadam', 'rmsprop'],
-                               'lr': [1E-3, 1E-4, 1E-5],
+                               'batch_size': [128, 256, 512, 1024],
+                               'epochs': [1000],
+                               'patience': [30, 50],
+                               'optimizer': ['adam', 'nadam', 'rmsprop', 'sgd'],
+                               'lr': [1E-2, 1E-3, 1E-4],
                                'momentum': [0.9, 0.99],
                                'decay': [1E-3, 1E-4, 1E-5],
+                               'pred_steps': [12*24]
                                }
 
     def training(self, X_train, y_train, X_test, y_test, p):
@@ -40,13 +44,10 @@ class LSTMPredictor(ModelInterface):
         history, self.model = self.talos_model(X_train, y_train, X_test, y_test, p)
         training_time = datetime.now() - training_start
 
-        self.train_model.summary()
-        print(history)
-
         inference_start = datetime.now()
+
         forecast = self.train_model.predict(X_test)
-        forecast = forecast[:, -1]
-        forecast = forecast[~np.isnan(forecast)]
+        test = y_test[~np.isnan(y_test)]
         inference_time = (datetime.now() - inference_start) / y_test.shape[0]
 
         return self.model, history, forecast, training_time, inference_time
@@ -64,24 +65,14 @@ class LSTMPredictor(ModelInterface):
 
         return self.model, history, tuning_time
 
-    def training_talos(self, X_train, y_train, X_test, y_test, p):
-        p = self.parameter_list
-        tf.keras.backend.clear_session()
-        self.input_shape = X_train.shape[1:]
+    def load_and_predict(self, X_train, y_train, X_test, y_test, p):
+        self.train_model = self.load_model(X_train, y_train, X_test, y_test, p)
+        self.model = self.train_model
 
-        t = talos.Scan(x=X_train,
-                       y=y_train,
-                       model=self.talos_model,
-                       experiment_name=self.name,
-                       params=p,
-                       clear_session=True,
-                       print_params=True,
-                       round_limit=500)
-
-        return t, None, None
+        forecast = self.train_model.predict(X_test)
+        return self.model, forecast
 
     def load_and_tune(self, X_train, y_train, X_test, y_test, p):
-        global opt
         self.train_model = self.load_model(X_train, y_train, X_test, y_test, p)
         self.model = self.train_model
 
@@ -107,23 +98,31 @@ class LSTMPredictor(ModelInterface):
 
         forecast = self.train_model.predict(X_test)
 
-        forecast = forecast[:, -1]
-        forecast = forecast[~np.isnan(forecast)]
-
-        return self.model, history, forecast
+        return self.model, forecast
 
     def load_model(self, X_train, y_train, x_val, y_val, p):
         tf.keras.backend.clear_session()
         input_shape = X_train.shape[1:]
-        self.train_model = Sequential([
-            tf.keras.layers.Conv1D(filters=p['first_conv_dim'], kernel_size=p['first_conv_kernel'],
-                                   strides=1, padding="causal",
-                                   activation=p['first_conv_activation'],
-                                   input_shape=input_shape),
-            tf.keras.layers.LSTM(p['second_lstm_dim']), 
-            tf.keras.layers.Dense(p['first_dense_dim'], activation=p['first_dense_activation']),
-            tf.keras.layers.Dense(1),
-        ])
+
+        input_tensor = Input(shape=input_shape)
+
+        x = Lambda(lambda x: x)(input_tensor)
+        for layer in range(p['cnn_layers']):
+            x = Conv1D(filters=p['first_conv_dim'], kernel_size=p['first_conv_kernel'],
+                       strides=1, padding="causal",
+                       activation=p['first_conv_activation'],
+                       input_shape=input_shape)(x)
+
+        x = LSTM(p['second_lstm_dim'])(x)
+
+        for dim in p['mlp_units']:
+            x = Dense(dim, activation="relu")(x)
+
+        x = layers.Dense(p['first_dense_dim'], activation=p['first_dense_activation'])(x)
+
+        outputs = tf.keras.layers.Dense(y_train.shape[1])(x)
+
+        self.train_model = Model(inputs=input_tensor, outputs=outputs)
 
         if p['optimizer'] == 'adam':
             opt = Adam(learning_rate=p['lr'], decay=p['decay'])
@@ -142,17 +141,28 @@ class LSTMPredictor(ModelInterface):
         return self.train_model
 
     def talos_model(self, X_train, y_train, x_val, y_val, p):
+        tf.keras.backend.clear_session()
         input_shape = X_train.shape[1:]
-        
-        self.train_model = Sequential([
-            tf.keras.layers.Conv1D(filters=p['first_conv_dim'], kernel_size=p['first_conv_kernel'],
-                                   strides=1, padding="causal",
-                                   activation=p['first_conv_activation'],
-                                   input_shape=input_shape),
-            tf.keras.layers.LSTM(p['second_lstm_dim']),
-            tf.keras.layers.Dense(p['first_dense_dim'], activation=p['first_dense_activation']),
-            tf.keras.layers.Dense(1),
-        ])
+
+        input_tensor = Input(shape=input_shape)
+
+        x = Lambda(lambda x: x)(input_tensor)
+        for layer in range(p['cnn_layers']):
+            x = Conv1D(filters=p['first_conv_dim'], kernel_size=p['first_conv_kernel'],
+                       strides=1, padding="causal",
+                       activation=p['first_conv_activation'],
+                       input_shape=input_shape)(x)
+
+        x = LSTM(p['second_lstm_dim'])(x)
+
+        for dim in p['mlp_units']:
+            x = Dense(dim, activation="relu")(x)
+
+        x = layers.Dense(p['first_dense_dim'], activation=p['first_dense_activation'])(x)
+
+        outputs = tf.keras.layers.Dense(y_train.shape[1])(x)
+
+        self.train_model = Model(inputs=input_tensor, outputs=outputs)
 
         if p['optimizer'] == 'adam':
             opt = Adam(learning_rate=p['lr'], decay=p['decay'])
@@ -165,6 +175,7 @@ class LSTMPredictor(ModelInterface):
         self.train_model.compile(loss='mean_squared_error',
                                  optimizer=opt,
                                  metrics=["mse", "mae"])
+
         save_check = custom_keras.CustomSaveCheckpoint(self)
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=p['patience'])
 
@@ -175,10 +186,15 @@ class LSTMPredictor(ModelInterface):
 
         return history, self.model
 
+    def negative_loglikelihood(self, targets, estimated_distribution):
+        return -estimated_distribution.log_prob(targets)
+
     def save_model(self):
         if self.train_model is None:
             print("ERROR: the model must be available before saving it")
             return
-        self.train_model.save(self.model_path + self.name + str(self.count_save).zfill(4) + '_model.tf',
-                              save_format="tf")
+
+        self.train_model.save_weights(self.model_path + self.name + str(self.count_save).zfill(4) + '_weights.tf',
+                                      save_format="tf")
+
         self.count_save += 1

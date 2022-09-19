@@ -1,20 +1,44 @@
 import pandas as pd
+import numpy as np
 
 
-def save_output_csv(preds, labels, feature, filename):
+def save_output_csv(preds, labels, feature, filename, bivariate=False):
     PATH = "res/output_" + filename + ".csv"
-    dct = {feature: preds,
-           'labels': labels}
-    print(dct)
+    if bivariate:
+        dct = {'avgcpu': preds[:, 0],
+               'labelsavgcpu': labels[:, 0],
+               'avgmem': preds[:, 1],
+               'labelsavgmem': labels[:, 1]
+               }
+    else:
+        preds = np.concatenate(preds, axis=0)
+        labels = np.concatenate(labels, axis=0)
+        dct = {feature: preds,
+               'labels': labels}
     df = pd.DataFrame(dct)
     df.to_csv(PATH)
 
 
-def save_uncertainty_csv(preds, std, labels, feature, filename):
+def save_uncertainty_csv(preds, std, labels, feature, filename, bivariate=False):
     PATH = "res/output_" + filename + ".csv"
-    dct = {feature: preds,
-           'std': std,
-           'labels': labels}
+
+    if bivariate:
+        std = np.array(std)
+        preds = np.array(preds)
+        dct = {'avgcpu': preds[:, 0],
+               'stdavgcpu': std[:, 0],
+               'labelsavgcpu': labels[:, 0],
+               'avgmem': preds[:, 1],
+               'stdavgmem': std[:, 1],
+               'labelsavgmem': labels[:, 1]
+               }
+    else:
+        preds = np.concatenate(preds, axis=0)
+        std = np.concatenate(std, axis=0)
+        labels = np.concatenate(labels, axis=0)
+        dct = {feature: preds,
+               'std': std,
+               'labels': labels}
     df = pd.DataFrame(dct)
     df.to_csv(PATH)
 
