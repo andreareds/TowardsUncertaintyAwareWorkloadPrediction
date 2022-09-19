@@ -54,4 +54,28 @@ python lstmd_training.py
 * multiunivariate
 * multibivariate
 
+#### Methods:
 
+```bash
+training_talos
+```
+
+Run the hyperparameters search via Talos optimization library
+
+```bash
+training
+```
+
+Train a model from scratch, given a set of hyperparameters
+
+```bash
+load_and_predict
+```
+
+Load a pretrained model and make the prediction
+
+```bash
+load_and_tune
+```
+
+Load a pretrained model and tune the network on the specified dataset
